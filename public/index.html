@@ -2,13 +2,39 @@
 <html>
 
 <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <title>talk talk talk</title>
 </head>
 
 <body>
-  <button id="btn">CLick me</button>
+  <header class="container">
+    <nav>
+      <strong>Talk talk talk</strong>
+    </nav>
+  </header>
 
-  <!-- separate file cus too lazy to config js lsp in html-->
+  <main class="container">
+    <section id="chat-section">
+
+    </section>
+
+    <section>
+      <form id="chat-form">
+        <fieldset role="group">
+          <input type="text" id="chat-message-input" name="message" placeholder="Type your message here..." required>
+          <input type="submit" value="Send">
+        </fieldset>
+      </form>
+    </section>
+  </main>
+
+  <footer class="container">
+    <small><a id="chat-message-reset" href="#">Reset chat</a></small>
+  </footer>
+
   <script src="./main.js">
   </script>
 </body>
