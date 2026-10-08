@@ -1,7 +1,7 @@
 package ws
 
 import (
-	"fmt"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -44,10 +44,16 @@ func (c *client) readPump() {
 			return
 		}
 
-		msg := fmt.Appendf(nil, "user-%p: %s", c, p)
-		slog.Info(string(msg))
+		var e event
+		err = json.Unmarshal(p, &e)
+		if err != nil {
+			slog.Error(err.Error())
+			continue
+		}
 
-		c.hub.broadcast <- msg
+		e.Sender = c
+
+		c.hub.broadcast <- e
 	}
 }
 

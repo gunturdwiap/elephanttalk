@@ -1,8 +1,9 @@
-function renderChatBox(username, msg) {
+function renderChatBox(sender, timestamp, msg) {
+  const timeStr = new Date(timestamp).toLocaleTimeString();
   return `
     <article>
       <header>
-        <small>${username}</small>
+        <small><strong>${sender}</strong> at ${timeStr}</small>
       </header>
       <p>${msg}</p>
     </article>
@@ -10,9 +11,7 @@ function renderChatBox(username, msg) {
 }
 
 function main() {
-  if (!window.WebSocket) {
-    throw new Error("WebSockets not supported");
-  }
+  if (!window.WebSocket) return;
 
   const conn = new WebSocket("ws://" + document.location.host + "/ws");
 
@@ -21,32 +20,36 @@ function main() {
   const input = document.querySelector("#chat-message-input");
   const chatReset = document.querySelector("#chat-message-reset");
 
-  conn.onopen = () => {
-    console.log("connected");
-  };
-
   conn.onmessage = (event) => {
-    const parts = event.data.split(": ");
-    const html = renderChatBox(parts[0], parts[1]);
-    chatSection.insertAdjacentHTML("beforeend", html);
-  };
-
-  conn.onerror = (error) => {
-    console.error("WebSocket error:", error);
+    try {
+      console.log(event.data);
+      const data = JSON.parse(event.data);
+      const html = renderChatBox(data.sender, data.sent_at, data.message);
+      chatSection.insertAdjacentHTML("beforeend", html);
+      chatSection.scrollTop = chatSection.scrollHeight;
+    } catch (err) {
+      console.error("Invalid JSON:", err);
+    }
   };
 
   chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    const messageText = input.value.trim();
-    if (!messageText) return;
+    const text = input.value.trim();
+    if (!text) return;
 
-    conn.send(messageText);
+    const packet = {
+      action: "chat",
+      payload: {
+        message: text,
+      },
+    };
 
+    conn.send(JSON.stringify(packet));
     chatForm.reset();
   });
 
-  chatReset.addEventListener("click", (e) => {
+  chatReset.addEventListener("click", () => {
     chatSection.innerHTML = "";
   });
 }
