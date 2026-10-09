@@ -1,13 +1,17 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
-	"github.com/gunturdwiap/elephanttalk/ws"
+	"github.com/gunturdwiap/elephanttalk/ws/v2"
 )
 
 // TODO: rooms, typings, presence? history?
@@ -21,7 +25,53 @@ func main() {
 	flag.Parse()
 
 	hub := ws.NewHub()
-	go hub.Run()
+
+	hub.HandleMessage(func(c *ws.Client, i int, b []byte) {
+		var request action
+		if err := json.Unmarshal(b, &request); err != nil {
+			slog.Error(err.Error())
+			return
+		}
+
+		switch request.Type {
+		case chat:
+			var input struct {
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(request.Payload, &input); err != nil {
+				slog.Error(err.Error())
+				return
+			}
+
+			// TODO do something validate persist idk
+
+			output := struct {
+				Sender  string    `json:"sender"`
+				SentAt  time.Time `json:"sent_at"`
+				Message string    `json:"message"`
+			}{
+				// dummy username
+				Sender:  fmt.Sprintf("user-%p", c),
+				SentAt:  time.Now(),
+				Message: input.Message,
+			}
+
+			out, err := json.Marshal(output)
+			if err != nil {
+				slog.Error(err.Error())
+				return
+			}
+
+			hub.Broadcast(i, out)
+
+		// TODO
+		case typing:
+			return
+		default:
+			slog.Error("unknown type")
+			return
+		}
+	})
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /", http.FileServer(http.Dir("./public")))
@@ -37,4 +87,41 @@ func main() {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+type action struct {
+	Type    actionType      `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type actionType string
+
+const (
+	chat   actionType = "chat"
+	typing actionType = "typing"
+)
+
+func parseActionType(raw string) (actionType, error) {
+	switch at := actionType(raw); at {
+	case chat, typing:
+		return at, nil
+	default:
+		return "", fmt.Errorf("invalid action type: %q", raw)
+	}
+}
+
+func (at *actionType) UnmarshalJSON(raw []byte) error {
+	unquoted, err := strconv.Unquote(string(raw))
+	if err != nil {
+		return errors.New("invalid action type")
+	}
+
+	parsed, err := parseActionType(unquoted)
+	if err != nil {
+		return err
+	}
+
+	*at = parsed
+
+	return nil
 }

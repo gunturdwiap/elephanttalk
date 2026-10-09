@@ -39,7 +39,7 @@ function main() {
     if (!text) return;
 
     const packet = {
-      action: "chat",
+      type: "chat",
       payload: {
         message: text,
       },

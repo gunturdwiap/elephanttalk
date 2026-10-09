@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -11,10 +10,11 @@ import (
 const (
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10 // 90% of pongWait
+	readLimit  = 500 * 1024
 )
 
 // Client represents each WS connection
-type client struct {
+type Client struct {
 	conn *websocket.Conn
 
 	// ensure write is only done by one goroutine, gorrila shenanigans
@@ -24,14 +24,14 @@ type client struct {
 	hub *Hub
 }
 
-func (c *client) readPump() {
+func (c *Client) readPump() {
 	defer func() {
 		c.conn.Close()
-		// send unregister, which then delete the client from the hub and close the send chan
+		// send unregister, which then delete the Client from the hub and close the send chan
 		c.hub.unregister <- c
 	}()
 
-	c.conn.SetReadLimit(500 * 1024)
+	c.conn.SetReadLimit(readLimit)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(appData string) error {
 		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -44,20 +44,11 @@ func (c *client) readPump() {
 			return
 		}
 
-		var e event
-		err = json.Unmarshal(p, &e)
-		if err != nil {
-			slog.Error(err.Error())
-			continue
-		}
-
-		e.Sender = c
-
-		c.hub.broadcast <- e
+		c.hub.Broadcast(p)
 	}
 }
 
-func (c *client) writePump() {
+func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		c.conn.Close()
@@ -67,7 +58,7 @@ func (c *client) writePump() {
 	for {
 		select {
 		case b, ok := <-c.send:
-			// if send chan is closed, that means client disconnected, send close message
+			// if send chan is closed, that means Client disconnected, send close message
 			if !ok {
 				if err := c.conn.WriteMessage(websocket.CloseMessage, nil); err != nil {
 					slog.Error(err.Error())
