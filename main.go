@@ -62,7 +62,9 @@ func main() {
 				return
 			}
 
-			hub.Broadcast(i, out)
+			hub.BroadcastFilter(i, out, func(tc *ws.Client) bool {
+				return c.Request().URL.Path == tc.Request().URL.Path
+			})
 
 		// TODO
 		case typing:
@@ -74,8 +76,13 @@ func main() {
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /", http.FileServer(http.Dir("./public")))
-	mux.Handle("GET /ws", hub)
+	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))
+	mux.Handle("/{$}", http.RedirectHandler("/room/general", http.StatusPermanentRedirect))
+	mux.HandleFunc("GET /room/{room}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./public/index.html")
+	})
+
+	mux.Handle("GET /room/{room}/ws", hub)
 
 	slog.Info("server run", slog.Int("port", port))
 	server := &http.Server{

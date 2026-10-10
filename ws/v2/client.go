@@ -34,10 +34,12 @@ func (c *Client) Request() *http.Request {
 	return c.request
 }
 
-func (c *Client) Get(key string) string {
+func (c *Client) Get(key string) (string, bool) {
 	c.metaMu.RLock()
-	defer c.metaMu.RUnlock()
-	return c.meta[key]
+	v, ok := c.meta[key]
+	c.metaMu.RUnlock()
+
+	return v, ok
 }
 
 func (c *Client) Set(key, val string) {

@@ -13,7 +13,9 @@ function renderChatBox(sender, timestamp, msg) {
 function main() {
   if (!window.WebSocket) return;
 
-  const conn = new WebSocket("ws://" + document.location.host + "/ws");
+  const conn = new WebSocket(
+    "ws://" + window.location.host + window.location.pathname + "/ws",
+  );
 
   const chatSection = document.querySelector("#chat-section");
   const chatForm = document.querySelector("#chat-form");

@@ -32,14 +32,6 @@ func NewHub() *Hub {
 		broadcast:  make(chan event),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		errorHandler: func(c *Client, err error) {
-			slog.Error(err.Error())
-		},
-	}
-
-	// TODO remove
-	h.messageHandler = func(c *Client, i int, b []byte) {
-		h.Broadcast(i, b)
 	}
 
 	go h.run()
@@ -99,9 +91,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		conn: conn,
-		send: make(chan event, 256),
-		hub:  h,
+		conn:    conn,
+		send:    make(chan event, 256),
+		hub:     h,
+		meta:    make(map[string]string),
+		request: r,
 	}
 
 	h.register <- client
