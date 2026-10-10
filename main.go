@@ -5,31 +5,46 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/gunturdwiap/elephanttalk/ws/v2"
 )
 
-// TODO: rooms, typings, presence? history?
+var counter atomic.Int64
 
-// flow:
-// connect:    http upgrade -> client -> register chan -> hub event loop -> added to h.clients
-// broadcast:  client readpump -> broadcast chan -> hub event loop -> all client send chans -> writepumps
+// TODO: rooms, typings, presence? history?
 func main() {
 	var port int
 	flag.IntVar(&port, "port", 8080, "server port")
 	flag.Parse()
 
-	hub := ws.NewHub()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 
+	hub := ws.NewHub()
+	hub.HandleError(func(c *ws.Client, err error) {
+		logger.Error(err.Error())
+	})
+	hub.HandleConnect(func(c *ws.Client) {
+		c.Set("username", fmt.Sprintf("user-%d", counter.Add(1)))
+	})
 	hub.HandleMessage(func(c *ws.Client, i int, b []byte) {
 		var request action
 		if err := json.Unmarshal(b, &request); err != nil {
-			slog.Error(err.Error())
+			logger.Error(err.Error())
+			return
+		}
+
+		username, ok := c.Get("username")
+		if !ok {
+			logger.Error("no username")
 			return
 		}
 
@@ -39,38 +54,61 @@ func main() {
 				Message string `json:"message"`
 			}
 			if err := json.Unmarshal(request.Payload, &input); err != nil {
-				slog.Error(err.Error())
+				logger.Error(err.Error())
 				return
 			}
 
 			// TODO do something validate persist idk
 
-			output := struct {
+			payload := struct {
 				Sender  string    `json:"sender"`
 				SentAt  time.Time `json:"sent_at"`
 				Message string    `json:"message"`
 			}{
-				// dummy username
-				Sender:  fmt.Sprintf("user-%p", c),
+				Sender:  username,
 				SentAt:  time.Now(),
-				Message: input.Message,
+				Message: html.EscapeString(input.Message),
 			}
 
-			out, err := json.Marshal(output)
+			output, err := marshalAction(chat, payload)
 			if err != nil {
-				slog.Error(err.Error())
+				logger.Error(err.Error())
 				return
 			}
 
-			hub.BroadcastFilter(i, out, func(tc *ws.Client) bool {
+			hub.BroadcastFilter(i, output, func(tc *ws.Client) bool {
 				return c.Request().URL.Path == tc.Request().URL.Path
 			})
 
-		// TODO
 		case typing:
-			return
+			var input struct {
+				IsTyping bool `json:"is_typing"`
+			}
+			if err := json.Unmarshal(request.Payload, &input); err != nil {
+				logger.Error(err.Error())
+				return
+			}
+
+			payload := struct {
+				Sender   string `json:"sender"`
+				IsTyping bool   `json:"is_typing"`
+			}{
+				Sender:   username,
+				IsTyping: input.IsTyping,
+			}
+
+			output, err := marshalAction(typing, payload)
+			if err != nil {
+				logger.Error(err.Error())
+				return
+			}
+
+			hub.BroadcastFilter(i, output, func(tc *ws.Client) bool {
+				targetUsername, _ := tc.Get("username")
+				return c.Request().URL.Path == tc.Request().URL.Path && username != targetUsername
+			})
 		default:
-			slog.Error("unknown type")
+			logger.Error("unknown type")
 			return
 		}
 	})
@@ -84,14 +122,14 @@ func main() {
 
 	mux.Handle("GET /room/{room}/ws", hub)
 
-	slog.Info("server run", slog.Int("port", port))
+	logger.Info("server run", slog.Int("port", port))
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
 	if err := server.ListenAndServe(); err != nil {
-		slog.Error(err.Error())
+		logger.Error(err.Error())
 		os.Exit(1)
 	}
 }
@@ -131,4 +169,15 @@ func (at *actionType) UnmarshalJSON(raw []byte) error {
 	*at = parsed
 
 	return nil
+}
+func marshalAction(at actionType, v any) ([]byte, error) {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(action{
+		Type:    at,
+		Payload: payload,
+	})
 }

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
   <meta charset="utf-8">
@@ -12,31 +12,35 @@
 <body>
   <header class="container">
     <nav>
-      <strong>Talk talk talk</strong>
+      <ul>
+        <li><strong>Talk talk talk</strong></li>
+      </ul>
+      <ul>
+        <li><a href="/room/general">general</a></li>
+        <li><a href="/room/random">random</a></li>
+        <li><a href="#" id="chat-message-reset" class="secondary">clear</a></li>
+      </ul>
     </nav>
   </header>
 
   <main class="container">
-    <section id="chat-section">
-
+    <section id="chat-section" style="height: 60vh; overflow-y: auto; padding-right: 10px; margin-bottom: 1rem;">
     </section>
 
     <section>
+      <p><small id="typing-indicator">&nbsp;</small></p>
+
       <form id="chat-form">
         <fieldset role="group">
-          <input type="text" id="chat-message-input" name="message" placeholder="Type your message here..." required>
+          <input type="text" id="chat-message-input" name="message" placeholder="Type a message..." required
+            autocomplete="off">
           <input type="submit" value="Send">
         </fieldset>
       </form>
     </section>
   </main>
 
-  <footer class="container">
-    <small><a id="chat-message-reset" href="#">Reset chat</a></small>
-  </footer>
-
-  <script src="/public/main.js">
-  </script>
+  <script src="/public/main.js"></script>
 </body>
 
 </html>

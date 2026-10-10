@@ -1,3 +1,4 @@
+// package ws plagiarize olahol/melody but worse
 package ws
 
 import (
@@ -7,6 +8,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type filterFunc func(*Client) bool
+
+type event struct {
+	messageType int
+	message     []byte
+	filter      filterFunc
+}
+
+// flow:
+// connect:    http upgrade -> client -> register chan -> hub event loop -> added to h.clients
+// broadcast:  client readpump -> broadcast chan -> hub event loop -> all client send chans -> writepumps
+
 // Hub holds all connected clients and manages them
 type Hub struct {
 	// set of unique clients, should be safe to use without mutex since no other goroutine touches this
@@ -15,7 +28,6 @@ type Hub struct {
 	// chan of data to broadcasts to each clients
 	broadcast chan event
 
-	// hub events
 	register   chan *Client
 	unregister chan *Client
 
@@ -26,6 +38,7 @@ type Hub struct {
 	errorHandler      func(*Client, error)
 }
 
+// NewHub creates a new hub and runs its eventloop in a new goroutine
 func NewHub() *Hub {
 	h := &Hub{
 		clients:    make(map[*Client]struct{}),
@@ -44,6 +57,21 @@ func (h *Hub) HandleDisconnect(f func(*Client))           { h.disconnectHandler 
 func (h *Hub) HandleMessage(f func(*Client, int, []byte)) { h.messageHandler = f }
 func (h *Hub) HandleError(f func(*Client, error))         { h.errorHandler = f }
 
+func (h *Hub) Broadcast(messageType int, msg []byte) {
+	h.broadcast <- event{
+		messageType: messageType,
+		message:     msg,
+	}
+}
+
+func (h *Hub) BroadcastFilter(messageType int, msg []byte, filter func(*Client) bool) {
+	h.broadcast <- event{
+		messageType: messageType,
+		message:     msg,
+		filter:      filter,
+	}
+}
+
 // hub eventloop
 func (h *Hub) run() {
 	for {
@@ -54,26 +82,29 @@ func (h *Hub) run() {
 				h.connectHandler(client)
 			}
 		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				if h.disconnectHandler != nil {
-					h.disconnectHandler(client)
-				}
-				delete(h.clients, client)
-				close(client.send)
-			}
+			h.removeClient(client)
 		case e := <-h.broadcast:
 			for client := range h.clients {
 				if e.filter == nil || e.filter(client) {
 					select {
 					case client.send <- e:
-					// if it blocks (chan is full), assume client dead and unregister
 					default:
-						delete(h.clients, client)
-						close(client.send)
+						// if it blocks (chan is full), assume client dead and unregister
+						h.removeClient(client)
 					}
 				}
 			}
 		}
+	}
+}
+
+func (h *Hub) removeClient(client *Client) {
+	if _, ok := h.clients[client]; ok {
+		if h.disconnectHandler != nil {
+			h.disconnectHandler(client)
+		}
+		delete(h.clients, client)
+		close(client.send)
 	}
 }
 
@@ -100,22 +131,15 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.register <- client
 
-	// decouple so it doesnt block each other
-	go client.readPump()
-	go client.writePump()
-}
-
-func (h *Hub) Broadcast(messageType int, msg []byte) {
-	h.broadcast <- event{
-		messageType: messageType,
-		message:     msg,
+	if h.connectHandler != nil {
+		h.connectHandler(client)
 	}
-}
 
-func (h *Hub) BroadcastFilter(messageType int, msg []byte, filter func(*Client) bool) {
-	h.broadcast <- event{
-		messageType: messageType,
-		message:     msg,
-		filter:      filter,
+	// decouple rw so it doesnt block each other
+	go client.writePump()
+	client.readPump()
+
+	if h.disconnectHandler != nil {
+		h.disconnectHandler(client)
 	}
 }
