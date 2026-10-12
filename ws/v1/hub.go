@@ -44,7 +44,7 @@ func (h *Hub) Run() {
 			for client := range h.clients {
 				if e.filter != nil || e.filter(client) {
 					select {
-					case client.send <- e.data:
+					case client.send <- e.message:
 					// if it blocks (chan is full), assume client dead and unregister
 					default:
 						delete(h.clients, client)
@@ -84,8 +84,8 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Hub) Broadcast(msg []byte) {
 	h.broadcast <- event{
-		t:    websocket.TextMessage,
-		data: msg,
+		messageType: websocket.TextMessage,
+		message:     msg,
 		filter: func(c *Client) bool {
 			return true
 		},
@@ -94,8 +94,8 @@ func (h *Hub) Broadcast(msg []byte) {
 
 func (h *Hub) BroadcastFilter(msg []byte, filter func(*Client) bool) {
 	h.broadcast <- event{
-		t:      websocket.TextMessage,
-		data:   msg,
-		filter: filter,
+		messageType: websocket.TextMessage,
+		message:     msg,
+		filter:      filter,
 	}
 }

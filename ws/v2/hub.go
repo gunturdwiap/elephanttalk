@@ -4,6 +4,7 @@ package ws
 import (
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 )
@@ -16,7 +17,7 @@ type event struct {
 	filter      filterFunc
 }
 
-// flow:
+// note to self, flow:
 // connect:    http upgrade -> client -> register chan -> hub event loop -> added to h.clients
 // broadcast:  client readpump -> broadcast chan -> hub event loop -> all client send chans -> writepumps
 
@@ -30,12 +31,16 @@ type Hub struct {
 
 	register   chan *Client
 	unregister chan *Client
+	shutdown   chan struct{}
 
 	// hooks
 	connectHandler    func(*Client)
 	disconnectHandler func(*Client)
-	messageHandler    func(*Client, int, []byte)
+	messageHandler    func(*Client, []byte)
 	errorHandler      func(*Client, error)
+
+	// avoid shutting down mult times
+	isShutdown atomic.Bool
 }
 
 // NewHub creates a new hub and runs its eventloop in a new goroutine
@@ -45,6 +50,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan event),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		shutdown:   make(chan struct{}),
 	}
 
 	go h.run()
@@ -52,21 +58,21 @@ func NewHub() *Hub {
 }
 
 // hooks setters
-func (h *Hub) HandleConnect(f func(*Client))              { h.connectHandler = f }
-func (h *Hub) HandleDisconnect(f func(*Client))           { h.disconnectHandler = f }
-func (h *Hub) HandleMessage(f func(*Client, int, []byte)) { h.messageHandler = f }
-func (h *Hub) HandleError(f func(*Client, error))         { h.errorHandler = f }
+func (h *Hub) HandleConnect(f func(*Client))         { h.connectHandler = f }
+func (h *Hub) HandleDisconnect(f func(*Client))      { h.disconnectHandler = f }
+func (h *Hub) HandleMessage(f func(*Client, []byte)) { h.messageHandler = f }
+func (h *Hub) HandleError(f func(*Client, error))    { h.errorHandler = f }
 
-func (h *Hub) Broadcast(messageType int, msg []byte) {
+func (h *Hub) Broadcast(msg []byte) {
 	h.broadcast <- event{
-		messageType: messageType,
+		messageType: websocket.TextMessage,
 		message:     msg,
 	}
 }
 
-func (h *Hub) BroadcastFilter(messageType int, msg []byte, filter func(*Client) bool) {
+func (h *Hub) BroadcastFilter(msg []byte, filter func(*Client) bool) {
 	h.broadcast <- event{
-		messageType: messageType,
+		messageType: websocket.TextMessage,
 		message:     msg,
 		filter:      filter,
 	}
@@ -78,9 +84,6 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = struct{}{}
-			if h.connectHandler != nil {
-				h.connectHandler(client)
-			}
 		case client := <-h.unregister:
 			h.removeClient(client)
 		case e := <-h.broadcast:
@@ -94,15 +97,17 @@ func (h *Hub) run() {
 					}
 				}
 			}
+		case <-h.shutdown:
+			for client := range h.clients {
+				h.removeClient(client)
+			}
+			return
 		}
 	}
 }
 
 func (h *Hub) removeClient(client *Client) {
 	if _, ok := h.clients[client]; ok {
-		if h.disconnectHandler != nil {
-			h.disconnectHandler(client)
-		}
 		delete(h.clients, client)
 		close(client.send)
 	}
@@ -141,5 +146,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if h.disconnectHandler != nil {
 		h.disconnectHandler(client)
+	}
+}
+
+func (h *Hub) Shutdown() {
+	if !h.isShutdown.Swap(true) {
+		close(h.shutdown)
 	}
 }

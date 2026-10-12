@@ -12,6 +12,7 @@ const (
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10 // 90% of pongWait
 	readLimit  = 500 * 1024
+	writeWait  = 10 * time.Second
 )
 
 // Client represents a ws connection
@@ -70,8 +71,8 @@ func (c *Client) readPump() {
 			return
 		}
 
-		if c.hub.messageHandler != nil {
-			c.hub.messageHandler(c, mt, p)
+		if mt == websocket.TextMessage && c.hub.messageHandler != nil {
+			c.hub.messageHandler(c, p)
 		}
 	}
 }
@@ -86,6 +87,7 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case e, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			// if send chan is closed, that means Client disconnected, send close message
 			if !ok {
 				if err := c.conn.WriteMessage(websocket.CloseMessage, nil); err != nil {
