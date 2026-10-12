@@ -89,12 +89,7 @@ func (h *Hub) run() {
 		case e := <-h.broadcast:
 			for client := range h.clients {
 				if e.filter == nil || e.filter(client) {
-					select {
-					case client.send <- e:
-					default:
-						// if it blocks (chan is full), assume client dead and unregister
-						h.removeClient(client)
-					}
+					client.sendEvent(e)
 				}
 			}
 		case <-h.shutdown:

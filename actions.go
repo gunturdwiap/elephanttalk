@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -16,6 +17,7 @@ type actionType string
 const (
 	chatAction   actionType = "chat"
 	typingAction actionType = "typing"
+	errorAction  actionType = "error"
 )
 
 func (at *actionType) UnmarshalJSON(raw []byte) error {
@@ -63,7 +65,7 @@ func marshalAction(at actionType, v any) ([]byte, error) {
 func (app *application) chatActionHandler(c *ws.Client, payloadBytes json.RawMessage) {
 	username, ok := c.Get("username")
 	if !ok {
-		app.logger.Error("no username found for client")
+		app.sendErrorAction(c, chatAction, "no username found for client")
 		return
 	}
 
@@ -71,7 +73,7 @@ func (app *application) chatActionHandler(c *ws.Client, payloadBytes json.RawMes
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(payloadBytes, &input); err != nil {
-		app.logger.Error(err.Error())
+		app.sendErrorAction(c, chatAction, "bad req")
 		return
 	}
 
@@ -87,7 +89,7 @@ func (app *application) chatActionHandler(c *ws.Client, payloadBytes json.RawMes
 
 	output, err := marshalAction(chatAction, payload)
 	if err != nil {
-		app.logger.Error(err.Error())
+		app.sendInternalErrorAction(c, chatAction, err)
 		return
 	}
 
@@ -99,7 +101,7 @@ func (app *application) chatActionHandler(c *ws.Client, payloadBytes json.RawMes
 func (app *application) typingActionHandler(c *ws.Client, payloadBytes json.RawMessage) {
 	username, ok := c.Get("username")
 	if !ok {
-		app.logger.Error("no username found for client")
+		app.sendErrorAction(c, typingAction, "no username found for client")
 		return
 	}
 
@@ -107,7 +109,7 @@ func (app *application) typingActionHandler(c *ws.Client, payloadBytes json.RawM
 		IsTyping bool `json:"is_typing"`
 	}
 	if err := json.Unmarshal(payloadBytes, &input); err != nil {
-		app.logger.Error(err.Error())
+		app.sendErrorAction(c, typingAction, "bad req")
 		return
 	}
 
@@ -121,7 +123,7 @@ func (app *application) typingActionHandler(c *ws.Client, payloadBytes json.RawM
 
 	output, err := marshalAction(typingAction, payload)
 	if err != nil {
-		app.logger.Error(err.Error())
+		app.sendInternalErrorAction(c, typingAction, err)
 		return
 	}
 
@@ -129,4 +131,30 @@ func (app *application) typingActionHandler(c *ws.Client, payloadBytes json.RawM
 		targetUsername, _ := tc.Get("username")
 		return c.Request().URL.Path == tc.Request().URL.Path && username != targetUsername
 	})
+}
+
+func (app *application) sendErrorAction(c *ws.Client, intendedAction actionType, msg string) {
+	type payload struct {
+		Type    actionType `json:"type"`
+		Message string     `json:"message"`
+	}
+	res, err := marshalAction(errorAction, payload{
+		Type:    intendedAction,
+		Message: msg,
+	})
+	if err != nil {
+		app.logger.Error("failed to marshal error action payload", slog.String("err", err.Error()))
+		return
+	}
+
+	c.Send(res)
+}
+
+func (app *application) sendInternalErrorAction(c *ws.Client, intendedAction actionType, err error) {
+	app.logger.Error("internal server error",
+		slog.String("action", string(intendedAction)),
+		slog.String("err", err.Error()),
+	)
+
+	app.sendErrorAction(c, intendedAction, "An internal server error occurred")
 }

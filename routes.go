@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/gunturdwiap/elephanttalk/ws/v2"
 )
+
+// TODO
+var counter atomic.Int64
 
 func (app *application) routes() http.Handler {
 	app.hub.HandleError(func(c *ws.Client, err error) {
@@ -15,7 +19,7 @@ func (app *application) routes() http.Handler {
 	})
 
 	app.hub.HandleConnect(func(c *ws.Client) {
-		c.Set("username", fmt.Sprintf("user-%d", app.counter.Add(1)))
+		c.Set("username", fmt.Sprintf("user-%d", counter.Add(1)))
 	})
 
 	app.hub.HandleDisconnect(func(c *ws.Client) {

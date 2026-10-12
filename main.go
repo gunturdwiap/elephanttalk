@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,9 +16,8 @@ import (
 )
 
 type application struct {
-	hub     *ws.Hub
-	logger  *slog.Logger
-	counter atomic.Int64
+	hub    *ws.Hub
+	logger *slog.Logger
 }
 
 func main() {

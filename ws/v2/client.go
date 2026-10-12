@@ -49,11 +49,27 @@ func (c *Client) Set(key, val string) {
 	c.metaMu.Unlock()
 }
 
+func (c *Client) Send(b []byte) {
+	c.sendEvent(event{
+		messageType: websocket.TextMessage,
+		message:     b,
+	})
+}
+
+func (c *Client) sendEvent(e event) {
+	select {
+	case c.send <- e:
+	default:
+		// if it blocks (chan is full), assume client dead and unregister
+		c.hub.unregister <- c
+	}
+}
+
 func (c *Client) readPump() {
 	defer func() {
-		c.conn.Close()
 		// send unregister, which then delete the Client from the hub and close the send chan
 		c.hub.unregister <- c
+		c.conn.Close()
 	}()
 
 	c.conn.SetReadLimit(readLimit)
@@ -107,6 +123,7 @@ func (c *Client) writePump() {
 
 		// periodically send ping
 		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				if c.hub.errorHandler != nil {
 					c.hub.errorHandler(c, err)
