@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/gunturdwiap/elephanttalk/public"
 	"github.com/gunturdwiap/elephanttalk/ws/v3"
 )
 
@@ -47,13 +48,17 @@ func (app *application) routes() http.Handler {
 		}
 	})
 
+	indexHTML, err := public.Files.ReadFile("index.html")
+	if err != nil {
+		panic(err)
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))
+	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServerFS(public.Files)))
 	mux.Handle("/{$}", http.RedirectHandler("/room/general", http.StatusPermanentRedirect))
 	mux.HandleFunc("GET /room/{room}", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./public/index.html")
+		w.Write(indexHTML)
 	})
-
 	mux.Handle("GET /room/{room}/ws", app.hub)
 
 	return mux
