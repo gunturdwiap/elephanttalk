@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gunturdwiap/elephanttalk/ws/v2"
+	"github.com/gunturdwiap/elephanttalk/ws/v3"
 )
 
 type actionType string

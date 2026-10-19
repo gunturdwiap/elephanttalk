@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gunturdwiap/elephanttalk/ws/v2"
+	"github.com/gunturdwiap/elephanttalk/ws/v3"
 )
 
 type application struct {

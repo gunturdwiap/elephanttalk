@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/gunturdwiap/elephanttalk/ws/v2"
+	"github.com/gunturdwiap/elephanttalk/ws/v3"
 )
 
 // TODO
@@ -31,6 +31,7 @@ func (app *application) routes() http.Handler {
 		var request action
 		if err := json.Unmarshal(b, &request); err != nil {
 			app.logger.Error(err.Error())
+			c.Close()
 			return
 		}
 
@@ -41,6 +42,8 @@ func (app *application) routes() http.Handler {
 			app.typingActionHandler(c, request.Payload)
 		default:
 			app.logger.Error("unknown action type", slog.String("type", string(request.Type)))
+			c.Close()
+			return
 		}
 	})
 
